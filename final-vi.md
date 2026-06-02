@@ -2,14 +2,15 @@
 
 ## I. Phân tích vấn đề — Tại sao Elfie cần AI Continuity Loop
 
-Elfie đã thu thập vitals, nhật ký thuốc, dữ liệu wearable và kết quả xét nghiệm từ hàng triệu bệnh nhân mắc bệnh mãn tính tại hơn 30 quốc gia. Dữ liệu đã có; hạ tầng đã có. Điều còn thiếu là một **vòng lặp khép kín** biến dữ liệu đó thành sự hiểu biết cho bệnh nhân, dùng dữ liệu đó để dự đoán và ngăn chặn bỏ điều trị, và chuyển dữ liệu thực tế đến tay bác sĩ điều trị trước mỗi lần tái khám — hoàn toàn tự động, không cần thao tác thủ công từ cả hai phía. Ba tính năng riêng lẻ hữu ích sẽ trở thành một bánh đà cộng hưởng khi chúng chia sẻ cùng một pipeline dữ liệu và củng cố lẫn nhau: AI Health Coach tạo ra tương tác hàng ngày → Predictive Adherence AI duy trì tương tác đó → Agentic Patient Summary chuyển hóa tương tác thành giá trị lâm sàng.
+Elfie đã thu thập vitals, nhật ký thuốc, dữ liệu wearable và kết quả xét nghiệm từ hàng triệu bệnh nhân mắc bệnh mãn tính tại hơn 30 quốc gia. Dữ liệu đã có; hạ tầng đã có. Điều còn thiếu là một **vòng lặp khép kín** biến dữ liệu đó thành sự hiểu biết cho bệnh nhân, dùng dữ liệu đó để dự đoán và ngăn chặn bỏ điều trị, và chuyển dữ liệu thực tế đến tay bác sĩ điều trị trước mỗi lần tái khám — hoàn toàn tự động, không cần thao tác thủ công từ cả hai phía. Bốn component, hai layer — Layer 1 (C1 AI Health Coach + C4 Progressive Profiling) xây dựng trải nghiệm cá nhân hóa tích lũy; Layer 2 (C2 + C3) chuyển hóa trải nghiệm đó thành kết quả lâm sàng. Bốn component trở thành một bánh đà cộng hưởng khi chia sẻ cùng một data pipeline: AI Health Coach + Progressive Profiling tạo tương tác hàng ngày đồng thời xây dựng hồ sơ sức khỏe bền vững → Predictive Adherence AI dùng hồ sơ đã làm giàu để phát hiện nguy cơ bỏ điều trị → Agentic Patient Summary chuyển hóa tương tác và dữ liệu profile thành giá trị lâm sàng cho bác sĩ.
 
 ### Yêu cầu cốt lõi
 
 - **AI Health Coach:** hỏi đáp ngôn ngữ tự nhiên dựa trên dữ liệu Elfie của chính người dùng; lớp an toàn 2 tầng (rule-based + ML classifier) chặn các đầu ra chẩn đoán hoặc hướng dẫn thuốc; truy xuất ngữ cảnh phân tầng (7 ngày gần nhất + semantic 90 ngày + toàn lịch sử theo yêu cầu); HIPAA BAA với nhà cung cấp LLM; hard escalation trigger cho các chỉ số nguy hiểm đến tính mạng; miễn phí cho tất cả người dùng; geo-gate VN + TH ở MVP
 - **Predictive Adherence AI:** chấm điểm batch hàng ngày bằng XGBoost/LightGBM cho tất cả người dùng đang hoạt động trên 11 đặc trưng hành vi; đầu ra `risk_score` (0–1) + `risk_tier` (Low / Medium / High); intervention selector phân tầng rủi ro (nudge gamification → cảnh báo bác sĩ ElfieCare); 5% holdout cohort để đo tác động; xóa dữ liệu theo cơ chế key vault; kiểm toán bias hàng quý theo nhân khẩu học; geo-gate VN + TH
 - **Agentic Patient Summary:** tổng hợp dữ liệu 30 ngày giữa các lần khám gửi vào ElfieCare trước mỗi buổi tái khám; application layer render toàn bộ giá trị định lượng (đầu ra Delta Analyzer — LLM không bao giờ thấy số liệu); LLM chỉ điền các slot văn bản tường thuật; đồng thuận kép (bệnh nhân chi tiết + bác sĩ xác nhận); compliance gate quét mọi đầu ra LLM trước khi gửi; thu hồi đồng thuận xóa tất cả summary đang chờ trong vòng 24 giờ; geo-gate VN + TH
-- **Xuyên suốt các thành phần:** đồng thuận opt-in rõ ràng cho từng thành phần; lọc PII trước mọi lệnh gọi LLM; tuân thủ PDPD (Việt Nam) + PDPA (Thái Lan); nhật ký kiểm toán bất biến; tích hợp coin gamification xuyên suốt cả ba; xác nhận phụ thuộc cross-team ElfieCare trước khi lên kế hoạch
+- **Proactive RAG + Progressive Profiling (C4 — tầng tăng cường cho C1):** NER pipeline GLiNER/SpaCy chạy song song với RAG trên mỗi tin nhắn người dùng sau PII scrubber; 7 loại entity được trích xuất vào profile store PostgreSQL append-only (`user_health_profile_entries`) được phân lập chặt chẽ theo `profile_id`; Profile Gap Analyzer (rule-based, không LLM) nhúng ≤2 câu hỏi tiếp theo mỗi phản hồi; tóm tắt profile ≤200 token được chèn vào ngữ cảnh AI Coach; consent modal kết hợp (dual-checkbox, Checkbox B bỏ chọn mặc định); coin event milestone profile (`PROFILE_FIRST_CONFIRMATION` + `PROFILE_COMPLETENESS_50`); phân lập `profile_id` 4 tầng cho Family Care; NER tiếng Anh cho MVP (cổng v1.1 tiếng Việt: F1 ≥0.85 mỗi loại entity)
+- **Xuyên suốt các thành phần:** đồng thuận opt-in rõ ràng cho từng thành phần; lọc PII trước mọi lệnh gọi LLM; tuân thủ PDPD (Việt Nam) + PDPA (Thái Lan); nhật ký kiểm toán bất biến; tích hợp coin gamification xuyên suốt cả bốn; xác nhận phụ thuộc cross-team ElfieCare trước khi lên kế hoạch
 
 ### Giả định
 
@@ -24,7 +25,7 @@ Elfie đã thu thập vitals, nhật ký thuốc, dữ liệu wearable và kết
 
 **Tóm tắt ngắn (≤600 từ)**
 
-Hướng tiếp cận cốt lõi: một pipeline event-driven gồm ba thành phần chia sẻ cùng một data store Elfie, mô hình đồng thuận và hạ tầng gamification. Mỗi thành phần có thể triển khai độc lập nhưng được thiết kế để khuếch đại lẫn nhau.
+Hướng tiếp cận cốt lõi: một pipeline event-driven gồm bốn component, hai layer, chia sẻ cùng một data store Elfie, mô hình đồng thuận và hạ tầng gamification. Layer 1 (C1 AI Health Coach + C4 Progressive Profiling) xây dựng tương tác người dùng và tích lũy hồ sơ sức khỏe bền vững; Layer 2 (C2 Predictive Adherence AI + C3 Agentic Patient Summary) dùng dữ liệu đó để ngăn chặn bỏ điều trị và đưa giá trị lâm sàng đến bác sĩ. Mỗi thành phần có thể triển khai độc lập nhưng được thiết kế để khuếch đại lẫn nhau.
 
 **AI Health Coach** là một conversational layer được điều phối qua API. Tin nhắn người dùng đi qua intent classifier, tiered context builder (Tier 1: 7 ngày gần nhất, Tier 2: semantic retrieval pgvector đến 90 ngày, Tier 3: toàn lịch sử theo yêu cầu) và PII scrubber trước khi đến LLM API. Toàn bộ phản hồi LLM được buffer lại, chạy qua 2-stage safety classifier (Stage 1: rule-based keyword/pattern ≤50ms; Stage 2: DistilBERT-class ML classifier ≤350ms), rồi mới gửi đến người dùng. Streaming được dời sang v2 vì SSE không tương thích về kiến trúc với kiểm tra an toàn sau khi sinh. Hard escalation trigger (HA >180/120, glucose <60 hoặc >400, đau ngực + khó thở) chặn hoàn toàn phản hồi AI và gửi thông điệp an toàn được mã hóa cứng.
 
@@ -32,9 +33,11 @@ Hướng tiếp cận cốt lõi: một pipeline event-driven gồm ba thành ph
 
 **Agentic Patient Summary** là pipeline theo từng cặp bác sĩ-bệnh nhân, được kích hoạt thủ công bởi bác sĩ trong ElfieCare hoặc theo lịch 30 ngày cho các liên kết đồng thuận đang hoạt động. Delta Analyzer tính toán hướng xu hướng định lượng (OLS slope), cờ anomaly, tỷ lệ tuân thủ và điểm tương tác hoàn toàn trong application code — không có sự tham gia của LLM trong tính toán số liệu. LLM chỉ nhận các slot văn bản tường thuật có tên để điền vào một template cố định. Compliance Gate xác minh đồng thuận kép, quét đầu ra LLM tìm ngôn ngữ giải thích lâm sàng bị cấm, và tạo mục nhật ký kiểm toán bất biến trước khi gửi. Tất cả trường định lượng trong card hiển thị cho bác sĩ đều được render trực tiếp từ đầu ra Delta Analyzer; LLM không thể bịa đặt số liệu trong các phần có cấu trúc.
 
+**Proactive RAG + Progressive Profiling (C4)** là tầng bộ nhớ cho AI Health Coach. NER pipeline GLiNER/SpaCy chạy song song với Tier 1 RAG retrieval trên mỗi tin nhắn người dùng, sau bộ lọc PII 2 điểm. Pipeline trích xuất bảy loại entity sức khỏe (CONDITION, MEDICATION, DEMOGRAPHIC, LIFESTYLE_FACTOR, SYMPTOM_CHRONIC, BIOMARKER_PREFERENCE, TEMPORAL_CONTEXT) và ghi vào profile store PostgreSQL append-only (`user_health_profile_entries`), được phân lập chặt chẽ theo `profile_id`. Profile Gap Analyzer rule-based ánh xạ intent truy vấn sang các trường profile bắt buộc và hướng dẫn LLM nhúng ≤2 câu hỏi tiếp theo có mục tiêu mỗi phản hồi. Tóm tắt profile ≤200 token được chèn vào mỗi prompt AI Coach trước các tài liệu được truy xuất. Các trích xuất dưới ngưỡng tin cậy 0.60 được đưa vào bảng tạm và xác nhận trong phiên tiếp theo. Từ v2+, hồ sơ đã làm giàu cung cấp thêm đặc trưng lâm sàng cho Predictive AI và ngữ cảnh sâu hơn cho Patient Summaries.
+
 Build vs Buy (nguyên tắc): tự xây dựng toàn bộ pipeline tiếp xúc dữ liệu bệnh nhân và lớp an toàn — đây là lợi thế cạnh tranh của sản phẩm. Mua hoặc dùng open-source cho hạ tầng phổ thông: LLM API, DistilBERT open-source weights, XGBoost/LightGBM, pgvector extension, Redis.
 
-Triển khai đa thành phần: cả ba thành phần chia sẻ cùng một user identity, hạ tầng đồng thuận, gamification pipeline và geo-gate enforcement. Event bus (Postgres LISTEN/NOTIFY hoặc message queue nhẹ) kết nối các thành phần: conversation milestone của AI Coach phát coin events; thay đổi risk-tier của Predictive AI có thể kích hoạt làm giàu ngữ cảnh cho Coach; pipeline Agentic Patient Summary đọc từ cùng Elfie data store mà context builder của Coach sử dụng.
+Triển khai đa thành phần: cả bốn component chia sẻ cùng một user identity, hạ tầng đồng thuận, gamification pipeline và geo-gate enforcement. Event bus (Postgres LISTEN/NOTIFY hoặc message queue nhẹ) kết nối các thành phần: milestone conversation AI Coach và coin event milestone profile được phát lên event bus; NER Progressive Profiling làm giàu ngữ cảnh AI Coach mỗi lượt; Predictive AI có thể tiêu thụ đặc trưng profile đã làm giàu như tín hiệu lâm sàng bổ sung từ v2+; Agentic Patient Summary có thêm ngữ cảnh bệnh và thuốc phong phú hơn từ profile store từ v2+.
 
 Mô hình quyền riêng tư dữ liệu: mặc định là tiếp xúc LLM tối thiểu — chỉ Tier 1 context trừ khi người dùng yêu cầu lịch sử sâu hơn; random token theo phiên (không phải user ID) trong tất cả lệnh gọi LLM API; PII scrubber chạy hai lần (tin nhắn người dùng + assembled prompt); không huấn luyện model trên dữ liệu khách hàng; HIPAA BAA với nhà cung cấp LLM bắt buộc trước khi xử lý bất kỳ PHI nào; xóa dữ liệu huấn luyện Predictive AI qua cơ chế key vault.
 
@@ -44,7 +47,7 @@ Chi tiết thiết kế đầy đủ và sơ đồ ở phần dưới.
 
 #### Ghi chú cho sơ đồ Mermaid hệ thống (bao gồm các tầng Clean Architecture trong cùng một sơ đồ):
 - Trên cùng/Interface: Clients (Elfie App iOS/Android, ElfieCare Web/Mobile) → API Gateway → Auth (JWT, quốc gia đăng ký người dùng cho geo-gate)
-- Application layer: ba AI service (AICoachService, AdherenceAIService, PatientSummaryService), shared service (ConsentService, GamificationService, NotificationService, ElfieCareIntegrationService)
+- Application layer: bốn AI service (AICoachService, **ProfilingService** (C4 — NER pipeline, Profile Store, Gap Analyzer, Context Assembler enhancement), AdherenceAIService, PatientSummaryService), shared service (ConsentService, GamificationService, NotificationService, ElfieCareIntegrationService)
 - Domain core: domain entity (UserHealthContext, RiskScore, InterventionEvent, PatientSummary, ConsentRecord) giữa tầng Application và Infrastructure
 - Infrastructure: PostgreSQL (shared data store + pgvector), Redis (session token, feature store, rate-limit), LLM API (external, BAA-gated), EventBus, ObjectStorage (audit log)
 
@@ -74,6 +77,13 @@ flowchart LR
 			SAFETY["2-Stage Safety Layer\nStage1: keyword/pattern ≤50ms\nStage2: DistilBERT ≤350ms\nCombined ≤400ms P95"]
 		end
 
+		subgraph PROFILING ["Proactive RAG + Progressive Profiling (C4)"]
+			NER["NER Pipeline\nGLiNER / SpaCy · 7 entity types\nParallel to RAG · post-PII-scrubber\nEnglish MVP · Vietnamese v1.1 gate"]
+			PROFILESTORE["Profile Store\nuser_health_profile_entries\nPostgreSQL append-only · profile_id isolated"]
+			GAPANALYZER["Profile Gap Analyzer\nrule-based · intent → required fields\n≤2 embedded questions · ≤20ms P95"]
+			CTXASM["Context Assembler Enhancement\n≤200-token profile summary\ninjected ahead of retrieved docs"]
+		end
+
 		subgraph ADHERENCE ["Predictive Adherence AI"]
 			FEAT["Feature Engineering\n11 features · 30-day window\nBatch: daily overnight (4h window)"]
 			MODEL["XGBoost / LightGBM\nrisk_score [0–1] + risk_tier\nAUC floor: 0.72\n5-fold temporal CV"]
@@ -100,6 +110,11 @@ flowchart LR
 		INTENT --> CTX
 		CTX --> PII1
 		PII1 --> LLM
+		PII1 --> NER
+		NER --> PROFILESTORE
+		PROFILESTORE --> GAPANALYZER
+		GAPANALYZER --> CTXASM
+		CTXASM --> LLM
 		LLM --> SAFETY
 		SAFETY --> GAMIF
 		FEAT --> MODEL
@@ -157,6 +172,11 @@ flowchart LR
 		- **PII Scrubber**: lọc hai điểm — tin nhắn người dùng trước, assembled prompt sau — trước bất kỳ lệnh gọi LLM nào.
 		- **LLM API client**: random token theo phiên; buffer toàn bộ phản hồi trước khi kiểm tra an toàn; không streaming.
 		- **2-Stage Safety Layer**: Stage 1 khớp keyword/pattern xác định (≤50ms); Stage 2 DistilBERT-class classifier (≤350ms); ngân sách kết hợp ≤400ms P95; phản hồi không an toàn được viết lại, không bao giờ gửi đến người dùng.
+	- *Proactive RAG + Progressive Profiling (C4 — tầng bộ nhớ của AI Health Coach)*
+		- **NER Pipeline (GLiNER/SpaCy):** chạy song song với Tier 1 RAG retrieval trên mỗi tin nhắn người dùng sau PII scrubber; trích xuất 7 loại entity — CONDITION, MEDICATION, DEMOGRAPHIC, LIFESTYLE_FACTOR, SYMPTOM_CHRONIC, BIOMARKER_PREFERENCE, TEMPORAL_CONTEXT; MVP tiếng Anh; cổng v1.1 tiếng Việt (F1 ≥0.85 mỗi loại entity trước khi bật profiling tiếng Việt).
+		- **Profile Store (`user_health_profile_entries`):** PostgreSQL append-only; mọi thao tác đọc/ghi đều được phân lập chặt chẽ theo `profile_id` (không phải `account_id`); điểm tin cậy, trạng thái xác nhận và tham chiếu conversation nguồn trên mỗi bản ghi; supersession logic qua cột `superseded_by` (không có UPDATE hoặc DELETE vật lý trên hàng bản ghi).
+		- **Profile Gap Analyzer:** rule-based (không LLM); ánh xạ intent truy vấn phát hiện sang các trường profile bắt buộc theo intent map được Medical Affairs review; xuất ≤2 trường gap cho Context Assembler làm mục tiêu câu hỏi tiếp theo nhúng; ≤20ms P95.
+		- **Context Assembler Enhancement:** chèn khối tóm tắt profile ≤200 token trước tài liệu được truy xuất và conversation buffer; các trường đã xác nhận/tin cậy cao được trình bày như sự thật; các trường tạm thời dùng ngôn ngữ có dè dặt ("dựa trên những gì bạn đã đề cập..."); profile rỗng → bỏ qua hoàn toàn khối tóm tắt.
 	- *Predictive Adherence AI*
 		- **Feature Engineering**: 11 đặc trưng hành vi trên cửa sổ 30 ngày; bắt buộc khoảng cách thời gian 7 ngày giữa ngày cắt đặc trưng T và điểm bắt đầu cửa sổ nhãn; batch hàng đêm.
 		- **XGBoost / LightGBM**: AUC floor 0.72 (mục tiêu 0.78); 5-fold temporal CV; người dùng holdout cohort bị loại khỏi huấn luyện và đánh giá.
@@ -186,12 +206,12 @@ flowchart LR
 	- **LLM API** (Claude 3.5 Sonnet / GPT-4o): HIPAA BAA bắt buộc trước khi truyền PHI; lưu giữ log API ≤30 ngày; random token theo phiên (không phải user ID) trong mỗi lệnh gọi.
 
 #### Luồng dữ liệu (đánh số để chú thích):
-1) Truy vấn người dùng → geo-gate API Gateway (allow-list VN/TH) → IntentClassifier → ContextBuilder → PII Scrubber → LLM API → 2-Stage Safety Layer → phản hồi được gửi (hoặc viết lại/chặn); coin event được phát lên Event Bus khi đạt milestone.
+1) Truy vấn người dùng → geo-gate API Gateway (allow-list VN/TH) → IntentClassifier → ContextBuilder → PII Scrubber → [song song: (a) đường LLM context và (b) NER Pipeline]; NER trích xuất entity sức khỏe → Profile Store cập nhật → Gap Analyzer xác định các trường profile còn thiếu → tóm tắt profile ≤200 token được chèn vào ngữ cảnh LLM → LLM API → 2-Stage Safety Layer → phản hồi kèm 0–2 câu hỏi tiếp theo nhúng được gửi (hoặc viết lại/chặn); coin event (milestone conversation + milestone profile nếu có) được phát lên Event Bus.
 2) Batch đêm: Feature Engineering đọc Elfie event log → vector đặc trưng ghi vào feature store PostgreSQL → XGBoost/LightGBM chấm điểm toàn bộ người dùng đủ điều kiện → risk tier ghi vào intervention queue → InterventionSelector gửi can thiệp qua NotificationService hoặc ElfieCareIntegrationService.
 3) Trigger summary (thủ công hoặc theo lịch): Delta Analyzer đọc dữ liệu Elfie cho cặp bác sĩ-bệnh nhân → Compliance Gate kiểm tra đồng thuận kép → LLM Narrative Generator điền slot tường thuật → Compliance Gate quét đầu ra → summary card đẩy vào ElfieCare qua ElfieCareIntegrationService → nhật ký kiểm toán bất biến ghi vào Object Storage.
 4) Thu hồi đồng thuận: ConsentService đánh dấu consent bị thu hồi → xóa Key Vault (bản ghi huấn luyện Predictive AI) + gọi retraction API (Patient Summary) + xóa dữ liệu conversation AI Coach; tất cả trong SLA đã công bố (24h cho summary, 72h cho dữ liệu AI Coach).
 
-#### Chú thích hình: "AI Continuity Loop — góc nhìn logic (clean architecture nhúng trong): interface → application (ba AI service + shared service) → domain → infrastructure; luồng dữ liệu event-driven, geo-gated, consent-governed và LLM-isolated."
+#### Chú thích hình: "AI Continuity Loop — góc nhìn logic (clean architecture nhúng trong): interface → application (bốn AI service bao gồm C4 Progressive Profiling memory layer + shared service) → domain → infrastructure; luồng dữ liệu event-driven, geo-gated, consent-governed và LLM-isolated."
 
 ### 2.2 Build vs Buy (bảng tóm tắt)
 
@@ -203,6 +223,8 @@ flowchart LR
 | Intervention selector + fatigue logic | Tự xây | Tích hợp gamification và logic can thiệp phân tầng là đặc thù sản phẩm |
 | Delta Analyzer (tính toán summary số liệu) | Tự xây | Tính toán lâm sàng có cấu trúc phải xác định và kiểm toán được; không dùng vendor |
 | Compliance Gate (kiểm tra đồng thuận + quét ngôn ngữ) | Tự xây | Kiểm tra đồng thuận kép là đặc thù sản phẩm; quét ngôn ngữ cần tinh chỉnh cho lĩnh vực y tế |
+| NER pipeline (GLiNER/SpaCy, trích xuất entity cho C4) | Tự xây (base open-source, fine-tune nội bộ) | NER lĩnh vực y tế cần fine-tune trên 7 loại entity; corpus y tế tiếng Việt có chú thích là tài sản độc quyền; tích hợp pipeline với PII scrubber và RAG là đặc thù sản phẩm |
+| Profile store Progressive Profiling + confidence scoring (C4) | Tự xây | Schema profile append-only, phân lập `profile_id` 4 tầng, mô hình staleness và conflict resolution là đặc thù sản phẩm; không có giải pháp off-the-shelf nào xử lý được phân lập multi-profile Family Care |
 | LLM (conversational AI + narrative generation) | Mua (Claude 3.5 Sonnet / GPT-4o API) | Lý luận tổng quát đẳng cấp thế giới; BAA sẵn có; TTM nhanh hơn self-hosting |
 | ML model training framework | Mua / open source (XGBoost, LightGBM) | ML tabular chuẩn ngành; không cần GPU; dễ audit |
 | Vector search | Mua / extension (pgvector trên PostgreSQL sẵn có) | Tránh thêm vector DB riêng; tiết kiệm chi phí ở quy mô MVP |
@@ -268,7 +290,8 @@ flowchart LR
 - **Kiểm soát phiên bản system prompt:** cập nhật system prompt cho cả AI Coach và Patient Summary đều cần chạy lại test suite compliance gate + ký duyệt Medical Affairs (≤5 ngày làm việc) + deploy qua code change. Auto-update bị cấm. Phiên bản system prompt được log theo từng conversation AI Coach và từng summary trong nhật ký kiểm toán.
 - **Compliance Gate mỗi summary:** mọi lần tạo Patient Summary đều phải qua language scanner trước khi gửi. Nếu scanner thất bại hoặc thiếu đồng thuận, bác sĩ nhận được "Summary unavailable — please review patient record manually" — không bao giờ là summary một phần hoặc chưa có đồng thuận.
 - **Validation gate của classifier:** Safety classifier (AI Coach Stage 2) phải đạt Precision ≥95%, Recall ≥90% trên dataset được chú thích độc lập (≥1.000 ví dụ, ≥2 người chú thích có nền tảng y tế, Cohen's kappa ≥0.80) trước khi bất kỳ người dùng thực nào thấy tính năng. Tái validation bắt buộc sau mỗi lần cập nhật classifier và hàng quý.
-- **Định vị Non-device CDS:** cả ba thành phần được định vị là công cụ hiểu dữ liệu và hỗ trợ workflow, không phải SaMD. Toàn bộ nội dung hướng người dùng và ngôn ngữ marketing được Medical Affairs và Legal review trước khi ra mắt. "AI doctor", "medical AI" và "diagnosis" bị cấm trong mọi nội dung sản phẩm.
+- **Định vị Non-device CDS:** cả bốn component được định vị là công cụ hiểu dữ liệu và hỗ trợ workflow, không phải SaMD. Toàn bộ nội dung hướng người dùng và ngôn ngữ marketing được Medical Affairs và Legal review trước khi ra mắt. "AI doctor", "medical AI" và "diagnosis" bị cấm trong mọi nội dung sản phẩm.
+- **Cấm dùng dữ liệu profile cho chẩn đoán (C4):** Hồ sơ sức khỏe người dùng tuyệt đối không được dùng để chẩn đoán hoặc đưa ra kết luận lâm sàng — chỉ được dùng để cải thiện mức độ phù hợp của phản hồi với thông tin sức khỏe mà người dùng đã tự cung cấp. Một hướng dẫn cố định trong system prompt AI Coach (cần ký duyệt Medical Affairs + Legal cho bất kỳ thay đổi nào) nghiêm cấm dùng dữ liệu profile cho chẩn đoán. Mọi đề cập đến bệnh trạng trong phản hồi AI phải dùng ngôn ngữ có trích dẫn nguồn ("dựa trên những gì bạn đã đề cập..."), không phải ngôn ngữ kết luận lâm sàng. Được xác nhận trong adversarial test suite (≥30 trường hợp prompt cá nhân hóa theo profile, zero đầu ra bị cấm).
 
 ### 2.5 Cam kết quyền riêng tư dữ liệu
 
@@ -278,7 +301,8 @@ flowchart LR
 - **Quyền xóa dữ liệu qua key vault (Predictive AI):** khóa pseudonymization ổn định mỗi người dùng lưu trong key vault; xóa khóa làm cho tất cả bản ghi huấn luyện pseudonymize không thể liên kết lại vĩnh viễn với người dùng — thỏa mãn PDPD (Việt Nam) Điều 11 / PDPA (Thái Lan) Mục 19 mà không cần xóa khỏi training archive. Chứng chỉ xóa được tạo khi xóa khóa.
 - **SLA thu hồi đồng thuận:** Patient Summary — tất cả summary đang chờ và đã gửi nhưng chưa xem được xóa trong 24 giờ; dữ liệu conversation AI Coach — xóa toàn bộ store trong 72 giờ; mục nhật ký kiểm toán được tombstone (không xóa). Pipeline thu hồi tự động với đường leo thang force-deletion và runbook đã định nghĩa.
 - **Đồng thuận chi tiết theo danh mục (Patient Summary):** bệnh nhân chọn danh mục dữ liệu nào bác sĩ được xem (vitals, tuân thủ thuốc, hoạt động thể chất, nhật ký triệu chứng, kết quả xét nghiệm, coin events). Mỗi danh mục có thể toggle độc lập. Đồng thuận là theo cặp bác sĩ-bệnh nhân, không phải toàn cục. Tái đồng thuận bắt buộc khi phiên bản văn bản đồng thuận thay đổi (cửa sổ 30 ngày trước khi xử lý như thu hồi).
-- **Geo-gate là tuyến phòng thủ đầu tiên:** tất cả endpoint AI kiểm tra mã quốc gia đăng ký phía server theo allow-list VN/TH trước khi truy cập bất kỳ dữ liệu nào. Giới hạn theo địa chỉ IP không được dùng (dễ vượt qua và không liên quan với cư dân). Mở rộng allow-list cần legal review + cập nhật config + bản dịch nội dung trong cùng một release.
+- **Phân lập cấp profile cho Progressive Profiling (C4):** tất cả câu truy vấn cơ sở dữ liệu trên `user_health_profile_entries` và `pending_profile_extractions` PHẢI có `WHERE profile_id = :active_profile_id`; application service role thực thi điều này ở tầng query-builder; `profile_id` được ràng buộc với session token lúc bắt đầu conversation và không thể thay đổi trong suốt phiên; đọc chéo profile là vi phạm bảo mật P0. Dữ liệu profile store được mã hóa at-rest (AES-256); xóa trong 72 giờ khi thu hồi đồng thuận profiling; payload coin event không chứa dữ liệu sức khỏe (chỉ `profile_id` đã hash + loại event).
+- **Geo-gate là tuyến phòng thủ đầu tiên:** tất cả bốn AI endpoint kiểm tra mã quốc gia đăng ký phía server theo allow-list VN/TH trước khi truy cập bất kỳ dữ liệu nào. Giới hạn theo địa chỉ IP không được dùng (dễ vượt qua và không liên quan với cư dân). Mở rộng allow-list cần legal review + cập nhật config + bản dịch nội dung trong cùng một release.
 
 ### 2.6 Mô hình chi phí — Free tier người dùng + monetize B2B
 
@@ -310,11 +334,11 @@ Triết lý định giá: tính năng AI Continuity Loop miễn phí cho tất c
 
 ## III. Kế hoạch nhóm & triển khai
 
-Triển khai ba thành phần tuần tự theo rủi ro phụ thuộc, với Component 1 (AI Health Coach) trước (không có phụ thuộc cross-team), Component 2 (Predictive Adherence AI) thứ hai (phụ thuộc ElfieCare giới hạn ở alert API), và Component 3 (Agentic Patient Summary) cuối cùng (phụ thuộc ElfieCare lớn nhất — 5 deliverable mới). Trình tự này cho phép nhóm validate lớp an toàn và tích hợp LLM trước khi thêm ML infrastructure, sau đó mới thêm phụ thuộc cross-team phức tạp nhất khi năng lực ElfieCare đã được xác nhận.
+Triển khai bốn component tuần tự theo rủi ro phụ thuộc: Component 1 (AI Health Coach) trước (không có phụ thuộc cross-team); Component 4 (Progressive Profiling) ngay sau khi AI Coach ra mắt (được xây trên cùng request path); Component 2 (Predictive Adherence AI) thứ ba (phụ thuộc ElfieCare giới hạn ở alert API); Component 3 (Agentic Patient Summary) cuối cùng (phụ thuộc ElfieCare lớn nhất — 5 deliverable mới). Trình tự này cho phép nhóm validate lớp an toàn và tích hợp LLM trước khi thêm NER profiling, rồi ML infrastructure, và cuối cùng mới thêm phụ thuộc cross-team phức tạp nhất khi năng lực ElfieCare đã được xác nhận.
 
-### Kế hoạch 9 tháng — Component 1 → Component 2 → Component 3 (18 × sprint 2 tuần)
+### Kế hoạch 10 tháng — C1 → C4 → C2 → C3 (18 sprint cốt lõi + 4 sprint C4)
 
-**Giả định:** Nhóm cốt lõi = Tech Lead (1.0), Backend Eng x2, Frontend/Mobile Eng (Flutter) x1, ML Engineer x1 (bán thời gian hoặc contractor), Medical Affairs reviewer (0.25), QA/Tester (0.5), PM/Product (0.5). Nhóm kỹ thuật ElfieCare: nhóm riêng, xác nhận phụ thuộc trước khi lên kế hoạch. Mục tiêu: ra mắt cả ba thành phần trong 9 tháng với đầy đủ gate an toàn, đồng thuận và tuân thủ quy định.
+**Giả định:** Nhóm cốt lõi = Tech Lead (1.0), Backend Eng x2, Frontend/Mobile Eng (Flutter) x1, ML Engineer x1 (bán thời gian hoặc contractor), Medical Affairs reviewer (0.25), QA/Tester (0.5), PM/Product (0.5). Nhóm kỹ thuật ElfieCare: nhóm riêng, xác nhận phụ thuộc trước khi lên kế hoạch. Mục tiêu: ra mắt cả bốn component trong ~10 tháng với đầy đủ gate an toàn, đồng thuận và tuân thủ quy định.
 
 ---
 
@@ -346,7 +370,31 @@ Triển khai ba thành phần tuần tự theo rủi ro phụ thuộc, với Com
 
 ---
 
-**Phase 2 — Predictive Adherence AI (Sprint 7–12, Tháng 4–6)**
+**Phase 1.5 — Proactive RAG + Progressive Profiling / C4 (C4-S1 đến C4-S4, Tháng 4–5)**
+
+*Điều kiện tiên quyết: AI Health Coach Launch Gate 1 đã pass. C4-S1 (NER service) có thể chồng với Phase 2 S7 (feature engineering) vì đây là các pipeline độc lập. NER inference service được chia sẻ với Component 3 — phải xác nhận năng lực trước khi cả C4 và C3 triển khai các tính năng phụ thuộc NER.*
+
+- **C4-S1 — NER inference service + schema profile store**
+	- Bàn giao: NER inference service (GLiNER/SpaCy, MVP tiếng Anh, 7 loại entity); validation F1 ≥0.85 tiếng Anh trên văn bản y tế holdout; migration schema profile store (`user_health_profile_entries` append-only + bảng tạm `pending_profile_extractions`); phân lập `profile_id` được thực thi ở tầng application service; mã hóa at-rest AES-256; NER chạy trên văn bản đã qua PII scrubber.
+	- Nghiệm thu: NER F1 ≥0.85 mỗi loại entity trong tiếng Anh; ràng buộc append-only được thực thi (không có UPDATE/DELETE được cấp cho application role); test từ chối đọc chéo profile; NER latency ≤150ms P95 trên tin nhắn 200 token.
+
+- **C4-S2 — Profile Gap Analyzer + câu hỏi tiếp theo nhúng**
+	- Bàn giao: Profile Gap Analyzer (rule-based; 9 danh mục intent → ánh xạ trường bắt buộc; intent map v1 được Medical Affairs review); validation câu hỏi tiếp theo sau khi sinh (kiểm tra số lượng, kiểm tra hỏi lại, kiểm tra cụm từ bị cấm, kiểm tra cờ escalation, kiểm tra pattern triệu chứng cấp tính); reranking Tier 2 RAG theo profile (công thức: 0.7×cosine + 0.3×profile_relevance_score).
+	- Nghiệm thu: unit test Gap Analyzer cho tất cả 9 danh mục intent × 4 trạng thái profile; số lượng câu hỏi ≤2 mọi lúc; validation sau khi sinh loại bỏ câu hỏi bị cấm trong tất cả các kịch bản test.
+
+- **C4-S3 — Tăng cường Context Assembler + confidence scoring + staleness**
+	- Bàn giao: khối tóm tắt profile (≤200 token, ngôn ngữ dè dặt theo mức tin cậy); thực thi thứ tự chèn ngữ cảnh (tóm tắt profile → Tier 1 → tài liệu truy xuất → conversation buffer); ưu tiên cắt bớt (conversation buffer trước, tóm tắt profile không bao giờ xuống dưới 100 token nếu không rỗng); luồng staging tin cậy thấp (tin cậy < 0.60 → bảng tạm, không vào profile store); pipeline hiệu chỉnh tin cậy (ECE ≤0.05); quy tắc staleness (180 ngày cho cân nặng/thuốc/lối sống; 365/730 ngày cho các trường tổng quát).
+	- Nghiệm thu: tóm tắt profile ≤200 token cho profile đầy đủ; profile rỗng → không có text placeholder; báo cáo hiệu chỉnh ECE ≤0.05; unit test staleness tại các ngày ranh giới (0, 90, 180, 181, 365, 366, 730).
+
+- **C4-S4 — Consent (dual-checkbox) + UI minh bạch profile + gamification + C4 Launch Gate**
+	- Bàn giao: consent modal kết hợp (Checkbox A = AI Health Coach, bắt buộc; Checkbox B = Progressive Profiling, tùy chọn, bỏ chọn mặc định; hai consent record độc lập); Settings → Privacy → AI Health Profile (xem trường, chỉ số tin cậy, thanh tiến trình completeness bệnh chính, xóa trường riêng lẻ, xuất JSON, xem trích xuất đang chờ); coin event milestone profile (`PROFILE_FIRST_CONFIRMATION`, `PROFILE_COMPLETENESS_50` — idempotent theo `profile_id`, không có dữ liệu sức khỏe trong payload); pipeline xóa profile (SLA 72h trên PostgreSQL + Redis + audit tombstone); Family Care: profiling bị tắt cho managed profile trong MVP.
+	- **Launch Gate 1.5:** Medical Affairs + Legal ký duyệt nội dung consent profiling; NER F1 ≥0.85 xác nhận trong tiếng Anh; test nhiễm chéo profile pass (zero rò rỉ dữ liệu giữa các profile); SLA xóa profile được test trong staging; scan PII payload coin event pass.
+
+---
+
+**Phase 2 — Predictive Adherence AI (Sprint 7–12, Tháng 5–8)**
+
+*Phase 2 bắt đầu muộn hơn khoảng 5–6 tuần để chờ C4 Launch Gate 1.5. C4-S1 (xây dựng NER service) có thể chồng với S7 (feature engineering) vì không có code dependency chung.*
 
 - **S7 — Feature engineering pipeline + feature store**
 	- Bàn giao: pipeline feature engineering 11 đặc trưng với thực thi khoảng cách thời gian 7 ngày; schema feature store (PostgreSQL JSONB); batch pipeline scaffold (hàng đêm); logic hash xác định holdout cohort; unit test trajectory người dùng tổng hợp.
@@ -407,6 +455,7 @@ Triển khai ba thành phần tuần tự theo rủi ro phụ thuộc, với Com
 ### Ghi chú & đánh đổi
 
 - Không bắt đầu Component 2 cho đến khi lớp an toàn AI Coach pass Launch Gate 1 — hạ tầng LLM và BAA là phụ thuộc.
+- Không bắt đầu tính năng C4 NER profiling trên production cho đến khi Launch Gate 1 pass — PII scrubber, hạ tầng session token và intent classifier AI Coach là phụ thuộc runtime bắt buộc của C4. C4-S1 (xây dựng NER inference service) có thể bắt đầu song song với Phase 1 S4–S6 vì không có phụ thuộc runtime vào AI Coach live; chỉ được deploy lên production sau khi Launch Gate 1 pass.
 - Phụ thuộc ElfieCare là rủi ro bàn giao lớn nhất. Xác nhận năng lực ElfieCare cho tất cả 9 deliverable (Component 2 + 3 kết hợp) trong một kế hoạch thống nhất trước P1-G0. Không để Component 2 và 3 tiến hành độc lập — ElfieCare không thể tiếp nhận hai planning track riêng biệt.
 - Giữ training model ML (S8) trên critical path nhưng tách biệt khỏi bàn giao ứng dụng. Model không đạt AUC floor không chặn bàn giao ứng dụng — intervention queue đơn giản là không có score để dispatch cho đến khi model pass.
 - Nếu design owner cho Premium Engagement Card chưa được xác nhận vào Week 0 (phụ thuộc S9), mặc định dùng standard in-app banner cho MVP. Không chặn S9 vì Figma mockup.
@@ -415,8 +464,9 @@ Triển khai ba thành phần tuần tự theo rủi ro phụ thuộc, với Com
 
 - **M0 (W0–W2):** BAA ký, baseline hạ tầng, LLM API tích hợp, geo-gate được thực thi, pgvector trên staging.
 - **MVP (AI Health Coach) — W12 (M3):** AI Coach lên production với đầy đủ lớp an toàn, đồng thuận, gamification và mobile UI.
-- **v1 (Predictive Adherence AI) — W24 (M6):** Predictive AI live; ElfieCare engagement alert active; bias baseline ghi lại; holdout cohort đang chạy.
-- **v1.5 (Agentic Patient Summary) — W36 (M9):** Patient Summary live; dual consent system active; ElfieCare summary card gửi đi; cả ba thành phần tạo thành AI Continuity Loop đầy đủ.
+- **v1.1 (Progressive Profiling / C4) — W20 (M5):** Progressive Profiling live; profile store active; consent modal dual-checkbox kết hợp được triển khai; NER F1 ≥0.85 tiếng Anh xác nhận; coin event milestone profile live; phân lập Family Care được validate.
+- **v1.5 (Predictive Adherence AI) — W28 (M7):** Predictive AI live; ElfieCare engagement alert active; bias baseline ghi lại; holdout cohort đang chạy.
+- **v2 (Agentic Patient Summary) — W40 (M10):** Patient Summary live; dual consent system active; ElfieCare summary card gửi đi; cả bốn component tạo thành AI Continuity Loop flywheel đầy đủ.
 
 ### Staffing & ramp
 
@@ -527,10 +577,15 @@ Elfie hoạt động ở hai thị trường có quy định (Việt Nam — PDP
 | PII scrubbing (hai điểm trước LLM) | Phần II.1 — PII Scrubber; Phần II.5; Phần III — S1 |
 | HIPAA BAA với nhà cung cấp LLM | Phần II.2 (Build vs Buy); Phần II.5; Phần IV; Phần III — S1 (điều kiện tiên quyết Launch Gate) |
 | Tích hợp gamification (coin xuyên suốt các thành phần) | Phần II.1 — GamificationService; Phần II.6 — Cost model; Phần III — S5, S9 |
-| Định vị quy định Non-device CDS | Phần II.4; Phần IV — Module A (Tầng 1); tất cả launch gate ba thành phần |
+| Định vị quy định Non-device CDS | Phần II.4; Phần IV — Module A (Tầng 1); tất cả launch gate bốn component |
+| Proactive RAG + Progressive Profiling (C4) — trích xuất entity NER, profile store, chèn tóm tắt profile | Phần II — Tóm tắt Design Document (đoạn C4); Phần II.1 — Chú giải phân cấp (ProfilingService); Phần II.2 (quyết định Build cho NER + Profile Store); Phần III — Phase 1.5 (C4-S1 đến C4-S4) |
+| Phân lập `profile_id` profile store (4 tầng) + schema append-only | Phần II.1 — Chú giải Profile Store; Phần II.5 (bullet phân lập cấp profile); Phần III — Phase 1.5 C4-S1 |
+| Profile Gap Analyzer + câu hỏi tiếp theo nhúng (0–2 mỗi phản hồi) | Phần II.1 — Chú giải Profile Gap Analyzer; Phần III — Phase 1.5 C4-S2 |
+| Consent modal kết hợp (dual-checkbox) + UI minh bạch profile + xóa profile | Phần II.5; Phần III — Phase 1.5 C4-S4 |
+| Gamification milestone profile (`PROFILE_FIRST_CONFIRMATION`, `PROFILE_COMPLETENESS_50`) | Phần II.1 — GamificationService; Phần III — Phase 1.5 C4-S4 |
 | System Architecture Diagram — góc nhìn logical & deployment | Phần II.1 — System Diagram (Mermaid block) và chú giải |
 | Design Document (tóm tắt ≤600 từ) | Phần II — đầu phần chứa Design Document tóm tắt |
-| Team & Delivery Plan — ba thành phần trong 9 tháng | Phần III — kế hoạch đầy đủ 18 sprint với staffing và mốc thời gian |
+| Team & Delivery Plan — bốn component trong 10 tháng | Phần III — kế hoạch đầy đủ (18 + 4 sprint) với staffing và mốc thời gian |
 | Module An toàn lâm sàng & Quy định | Phần IV — module đầy đủ bao phủ Module A, B, C |
 | Kế hoạch phụ thuộc cross-team ElfieCare | Phần III — S10, S16; Giả định rủi ro nhất và kịch bản thất bại |
 

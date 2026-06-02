@@ -2,14 +2,15 @@
 
 ## I. Problem Approach — Why Elfie Needs an AI Continuity Loop
 
-Elfie already collects vitals, medication logs, wearable data, and lab results from millions of chronic disease patients across 30+ countries. The data exists; the infrastructure exists. What does not exist is a **closed loop** that turns that data into understanding for the patient, uses it to predict and prevent dropout, and routes it to the treating physician before every consultation — automatically, without any manual work from either side. Three individually useful features become a compounding flywheel when they share the same data pipeline and reinforce each other: AI Health Coach creates daily engagement → Predictive Adherence AI preserves that engagement → Agentic Patient Summary converts that engagement into clinical value.
+Elfie already collects vitals, medication logs, wearable data, and lab results from millions of chronic disease patients across 30+ countries. The data exists; the infrastructure exists. What does not exist is a **closed loop** that turns that data into understanding for the patient, uses it to predict and prevent dropout, and routes it to the treating physician before every consultation — automatically, without any manual work from either side. Four components, two layers — Layer 1 (C1 AI Health Coach + C4 Progressive Profiling) builds cumulative personalized engagement; Layer 2 (C2 + C3) converts that engagement into clinical outcomes. The four components become a compounding flywheel when they share the same data pipeline: AI Health Coach + Progressive Profiling create daily engagement while building a persistent health profile → Predictive Adherence AI uses that enriched profile to detect dropout risk → Agentic Patient Summary converts engagement and profile data into clinical value for the physician.
 
 ### Core requirements
 
 - **AI Health Coach:** natural-language Q&A against each user's own Elfie data; 2-stage safety layer (rule-based + ML classifier) blocking diagnostic or medication-directive outputs; tiered context retrieval (7-day immediate + semantic 90-day + on-demand full history); HIPAA BAA with LLM provider; hard escalation triggers for life-threatening readings; free for all users; VN + TH geo-gate at MVP
 - **Predictive Adherence AI:** daily batch XGBoost/LightGBM scoring of all active users on 11 behavioral features; `risk_score` (0–1) + `risk_tier` (Low / Medium / High) output; risk-tiered intervention selector (gamification nudges → ElfieCare doctor alert); 5% holdout cohort for impact measurement; key vault-based right-to-erasure; quarterly bias audit per demographic slice; VN + TH geo-gate
 - **Agentic Patient Summary:** 30-day inter-visit data synthesis pushed to ElfieCare before every consultation; application-layer rendering of all quantitative values (Delta Analyzer output — LLM never sees numbers); LLM writes only narrative text slots; dual consent (patient granular + doctor acknowledgment); compliance gate scans every LLM output before delivery; consent revocation deletes all pending summaries within 24 hours; VN + TH geo-gate
-- **Cross-cutting:** explicit opt-in consent for each component; PII scrubbing before any LLM call; PDPD (Vietnam) + PDPA (Thailand) compliance; audit-immutable logs; gamification coin integration across all three; ElfieCare cross-team dependency confirmed before planning starts
+- **Proactive RAG + Progressive Profiling (C4 — enhancement layer on C1):** GLiNER/SpaCy NER pipeline running in parallel with RAG on every user message after the PII scrubber; 7 entity types extracted into append-only PostgreSQL profile store (`user_health_profile_entries`) strictly isolated by `profile_id`; Profile Gap Analyzer (rule-based, no LLM) embeds ≤2 follow-up questions per response; ≤200-token profile summary injected into every AI Coach context; combined consent modal (dual-checkbox, Checkbox B unchecked by default); profile milestone coin events (`PROFILE_FIRST_CONFIRMATION` + `PROFILE_COMPLETENESS_50`); 4-layer `profile_id` isolation for Family Care; MVP English-only NER (Vietnamese v1.1 gate: F1 ≥0.85 per entity type)
+- **Cross-cutting:** explicit opt-in consent for each component; PII scrubbing before any LLM call; PDPD (Vietnam) + PDPA (Thailand) compliance; audit-immutable logs; gamification coin integration across all four; ElfieCare cross-team dependency confirmed before planning starts
 
 ### Assumptions
 
@@ -24,7 +25,7 @@ Elfie already collects vitals, medication logs, wearable data, and lab results f
 
 **Short summary (≤600 words)**
 
-Core approach: a three-component, event-driven pipeline that shares the same underlying Elfie data store, consent model, and gamification infrastructure. Each component is independently deployable but designed to amplify the others.
+Core approach: a four-component, two-layer, event-driven pipeline that shares the same underlying Elfie data store, consent model, and gamification infrastructure. Layer 1 (C1 AI Health Coach + C4 Progressive Profiling) builds consumer-facing engagement and accumulates a persistent health profile; Layer 2 (C2 Predictive Adherence AI + C3 Agentic Patient Summary) converts that data to prevent dropout and route clinical value to physicians. Each component is independently deployable but designed to amplify the others.
 
 **AI Health Coach** is an API-orchestrated conversational layer. User messages pass through an intent classifier, a tiered context builder (Tier 1: last 7 days, Tier 2: pgvector semantic retrieval up to 90 days, Tier 3: on-demand full history), and a PII scrubber before reaching the LLM API. The full LLM response is buffered, run through a 2-stage safety classifier (Stage 1: rule-based keyword/pattern ≤50ms; Stage 2: DistilBERT-class ML classifier ≤350ms), and only then delivered to the user. Streaming is deferred to v2 because SSE is architecturally incompatible with the post-generation safety check. Hard escalation triggers (BP >180/120, glucose <60 or >400, chest pain + dyspnea) suppress the AI response entirely and deliver a hardcoded safety message.
 
@@ -32,9 +33,11 @@ Core approach: a three-component, event-driven pipeline that shares the same und
 
 **Agentic Patient Summary** is a per-doctor-patient-pair pipeline, triggered either manually by the doctor in ElfieCare or on a 30-day schedule for active consent links. The Delta Analyzer computes quantitative trend directions (OLS slope), anomaly flags, adherence rates, and engagement scores entirely in application code — no LLM involvement in numerical computation. The LLM receives only named narrative slots to fill within a fixed template. A Compliance Gate verifies dual consent, scans LLM output for prohibited clinical interpretation language, and creates an immutable audit log entry before delivery. All quantitative fields in the physician-visible card are rendered directly from Delta Analyzer output; the LLM cannot hallucinate numbers that appear in the structured sections.
 
+**Proactive RAG + Progressive Profiling (C4)** is the memory layer for AI Health Coach. A GLiNER/SpaCy NER pipeline runs in parallel with Tier 1 RAG retrieval on every user message, after the 2-point PII scrubber. It extracts seven health entity types (CONDITION, MEDICATION, DEMOGRAPHIC, LIFESTYLE_FACTOR, SYMPTOM_CHRONIC, BIOMARKER_PREFERENCE, TEMPORAL_CONTEXT) and writes them to an append-only PostgreSQL profile store (`user_health_profile_entries`), strictly isolated by `profile_id`. A rule-based Profile Gap Analyzer maps query intent to required profile fields and instructs the LLM to embed ≤2 targeted follow-up questions per response. A ≤200-token profile summary is injected into every AI Coach prompt ahead of retrieved documents. Extractions below confidence threshold 0.60 are staged in a pending table and confirmed in a subsequent session. In v2+, the enriched profile feeds additional clinical features into Predictive AI and deeper context into Patient Summaries.
+
 Build vs Buy (rule): build all patient-data-touching pipelines and safety layers — these are the product moat. Buy or use open-source for commodity infrastructure: LLM API, DistilBERT open-source weights, XGBoost/LightGBM, pgvector extension, Redis.
 
-Multi-component deployment: all three components share the same user identity, consent infrastructure, gamification pipeline, and geo-gate enforcement. The event bus (Postgres LISTEN/NOTIFY or lightweight message queue) connects components: AI Coach conversation milestones publish coin events; Predictive AI risk-tier changes can trigger context enrichment for the Coach; Agentic Patient Summary pipeline reads from the same Elfie data store as the Coach context builder.
+Multi-component deployment: all four components share the same user identity, consent infrastructure, gamification pipeline, and geo-gate enforcement. The event bus (Postgres LISTEN/NOTIFY or lightweight message queue) connects components: AI Coach conversation milestones and profile milestone events publish coin events; Progressive Profiling NER enriches AI Coach context on every turn; Predictive AI can consume enriched profile features as additional clinical signals in v2+; Agentic Patient Summary gains richer condition and medication context from the profile store in v2+.
 
 Data privacy model: default is minimal LLM exposure — Tier 1 context only unless user explicitly requests deeper history; per-session random token (not user ID) in all LLM API calls; PII scrubber runs twice (user message + assembled prompt); no model training on customer data; HIPAA BAA with LLM provider required before any PHI is processed; key vault-based erasure for Predictive AI training records.
 
@@ -44,7 +47,7 @@ Full design details and diagrams follow below.
 
 #### Notes for the system Mermaid diagram (include Clean Architecture layers within the same diagram):
 - Top/Interface: Clients (Elfie App iOS/Android, ElfieCare Web/Mobile) → API Gateway → Auth (JWT, user registration country for geo-gate)
-- Application layer: three AI services (AICoachService, AdherenceAIService, PatientSummaryService), shared services (ConsentService, GamificationService, NotificationService, ElfieCareIntegrationService)
+- Application layer: four AI services (AICoachService, **ProfilingService** (C4 — NER pipeline, Profile Store, Gap Analyzer, Context Assembler enhancement), AdherenceAIService, PatientSummaryService), shared services (ConsentService, GamificationService, NotificationService, ElfieCareIntegrationService)
 - Domain core: domain entities (UserHealthContext, RiskScore, InterventionEvent, PatientSummary, ConsentRecord) between Application and Infrastructure layers
 - Infrastructure: PostgreSQL (shared data store + pgvector), Redis (session tokens, feature store, rate-limit), LLM API (external, BAA-gated), EventBus, ObjectStorage (audit logs)
 
@@ -74,6 +77,13 @@ flowchart LR
 			SAFETY["2-Stage Safety Layer\nStage1: keyword/pattern ≤50ms\nStage2: DistilBERT ≤350ms\nCombined ≤400ms P95"]
 		end
 
+		subgraph PROFILING ["Proactive RAG + Progressive Profiling (C4)"]
+			NER["NER Pipeline\nGLiNER / SpaCy · 7 entity types\nParallel to RAG · post-PII-scrubber\nEnglish MVP · Vietnamese v1.1 gate"]
+			PROFILESTORE["Profile Store\nuser_health_profile_entries\nPostgreSQL append-only · profile_id isolated"]
+			GAPANALYZER["Profile Gap Analyzer\nrule-based · intent → required fields\n≤2 embedded questions · ≤20ms P95"]
+			CTXASM["Context Assembler Enhancement\n≤200-token profile summary\ninjected ahead of retrieved docs"]
+		end
+
 		subgraph ADHERENCE ["Predictive Adherence AI"]
 			FEAT["Feature Engineering\n11 features · 30-day window\nBatch: daily overnight (4h window)"]
 			MODEL["XGBoost / LightGBM\nrisk_score [0–1] + risk_tier\nAUC floor: 0.72\n5-fold temporal CV"]
@@ -100,6 +110,11 @@ flowchart LR
 		INTENT --> CTX
 		CTX --> PII1
 		PII1 --> LLM
+		PII1 --> NER
+		NER --> PROFILESTORE
+		PROFILESTORE --> GAPANALYZER
+		GAPANALYZER --> CTXASM
+		CTXASM --> LLM
 		LLM --> SAFETY
 		SAFETY --> GAMIF
 		FEAT --> MODEL
@@ -157,6 +172,11 @@ flowchart LR
 		- **PII Scrubber**: two-point scrubbing — user message first, assembled prompt second — before any LLM call.
 		- **LLM API client**: per-session random token; full response buffered before safety check; no streaming.
 		- **2-Stage Safety Layer**: Stage 1 deterministic keyword/pattern matching (≤50ms); Stage 2 DistilBERT-class classifier (≤350ms); combined budget ≤400ms P95; unsafe responses rewritten, never delivered.
+	- *Proactive RAG + Progressive Profiling (C4 — memory layer of AI Health Coach)*
+		- **NER Pipeline (GLiNER/SpaCy):** runs in parallel with Tier 1 RAG retrieval on every user message after the PII scrubber; extracts 7 entity types — CONDITION, MEDICATION, DEMOGRAPHIC, LIFESTYLE_FACTOR, SYMPTOM_CHRONIC, BIOMARKER_PREFERENCE, TEMPORAL_CONTEXT; English MVP; Vietnamese v1.1 gate (F1 ≥0.85 per entity type before Vietnamese-language profiling enabled).
+		- **Profile Store (`user_health_profile_entries`):** append-only PostgreSQL; all reads and writes scoped strictly by `profile_id` (not `account_id`); confidence score, confirmation status, and source conversation reference per entry; logical supersession via `superseded_by` column (no physical UPDATE or DELETE on entry rows).
+		- **Profile Gap Analyzer:** rule-based (no LLM); maps detected query intent to required profile fields using Medical Affairs-reviewed intent map; outputs ≤2 gap fields to Context Assembler as embedded follow-up question targets; ≤20ms P95.
+		- **Context Assembler Enhancement:** injects ≤200-token profile summary block ahead of retrieved documents and conversation buffer; confirmed/high-confidence fields stated as fact; provisional fields use hedged language ("based on what you've mentioned..."); empty profile → summary block omitted entirely.
 	- *Predictive Adherence AI*
 		- **Feature Engineering**: 11 behavioral features on 30-day windows; mandatory 7-day temporal gap between feature cutoff date T and label window start; daily overnight batch.
 		- **XGBoost / LightGBM**: AUC floor 0.72 (target 0.78); 5-fold temporal CV; Holdout cohort users excluded from training and evaluation.
@@ -186,12 +206,12 @@ flowchart LR
 	- **LLM API** (Claude 3.5 Sonnet / GPT-4o): HIPAA BAA required before any PHI is passed; API log retention ≤30 days; per-session random token (not user ID) in every call.
 
 #### Data flow (numbered for caption):
-1) User query → API Gateway geo-gate (VN/TH allow-list) → IntentClassifier → ContextBuilder → PII Scrubber → LLM API → 2-Stage Safety Layer → response delivered (or rewritten/blocked); coin event published to Event Bus on milestone.
+1) User query → API Gateway geo-gate (VN/TH allow-list) → IntentClassifier → ContextBuilder → PII Scrubber → [parallel: (a) LLM context path and (b) NER Pipeline]; NER extracts health entities → Profile Store updated → Gap Analyzer identifies missing profile fields → ≤200-token profile summary injected into LLM context → LLM API → 2-Stage Safety Layer → response with 0–2 embedded follow-up questions delivered (or rewritten/blocked); coin events (conversation milestone + profile milestone if triggered) published to Event Bus.
 2) Overnight batch: Feature Engineering reads Elfie event logs → feature vectors written to PostgreSQL feature store → XGBoost/LightGBM scores all eligible users → risk tiers written to intervention queue → InterventionSelector dispatches interventions via NotificationService or ElfieCareIntegrationService.
 3) Summary trigger (manual or scheduled): Delta Analyzer reads Elfie data for doctor-patient pair → Compliance Gate checks dual consent → LLM Narrative Generator fills narrative slots → Compliance Gate scans output → summary card pushed to ElfieCare via ElfieCareIntegrationService → immutable audit log written to Object Storage.
 4) Consent revocation: ConsentService marks consent revoked → Key Vault deletion (Predictive AI training records) + summary retraction API call (Patient Summary) + Coach conversation data deletion; all within published SLAs (24h for summaries, 72h for Coach data).
 
-#### Caption for the figure: "AI Continuity Loop logical view (clean architecture embedded): interface → application (three AI services + shared services) → domain → infrastructure; event-driven, geo-gated, consent-governed, and LLM-isolated data flows."
+#### Caption for the figure: "AI Continuity Loop logical view (clean architecture embedded): interface → application (four AI services including C4 Progressive Profiling memory layer + shared services) → domain → infrastructure; event-driven, geo-gated, consent-governed, and LLM-isolated data flows."
 
 ### 2.2 Build vs Buy (concise table)
 
@@ -203,6 +223,8 @@ flowchart LR
 | Intervention selector + fatigue logic | Build | Gamification integration and tiered intervention logic is product-specific |
 | Delta Analyzer (numerical summary computation) | Build | Structured clinical computation must be deterministic and auditable; no vendor |
 | Compliance Gate (consent check + language scan) | Build | Dual consent check is product-specific; language scan requires health-domain tuning |
+| NER pipeline (GLiNER/SpaCy, entity extraction for C4) | Build (open-source base, fine-tune in-house) | Health-domain NER requires fine-tuning on 7 medical entity types; Vietnamese medical corpus annotation is proprietary; pipeline integration with PII scrubber and RAG is product-specific |
+| Progressive Profiling store + confidence scoring (C4) | Build | Append-only profile schema, `profile_id` 4-layer isolation, staleness model, and conflict resolution are product-specific; no off-the-shelf health profiling handles Family Care multi-profile isolation |
 | LLM (conversational AI + narrative generation) | Buy (Claude 3.5 Sonnet / GPT-4o API) | World-class general reasoning; BAA available; faster TTM than self-hosting |
 | ML model training framework | Buy / open source (XGBoost, LightGBM) | Industry-standard tabular ML; no GPU required; easy audit trail |
 | Vector search | Buy / extension (pgvector on existing PostgreSQL) | Avoids separate vector DB; cost-effective at MVP scale |
@@ -268,7 +290,8 @@ flowchart LR
 - **System prompt version control:** system prompt updates for both AI Coach and Patient Summary require compliance gate test suite re-run + Medical Affairs sign-off (≤5 business days) + deployment via code change. Auto-update is prohibited. System prompt version is logged per AI Coach conversation and per summary in the audit log.
 - **Compliance Gate per summary:** every Patient Summary generation passes through a language scanner before delivery. If the scanner fails or consent is absent, the doctor receives "Summary unavailable — please review patient record manually" — never a partial or non-consented summary.
 - **Classifier validation gates:** Safety classifier (AI Coach Stage 2) must meet Precision ≥95%, Recall ≥90% on an independently annotated dataset (≥1,000 examples, ≥2 annotators with healthcare background, Cohen's kappa ≥0.80) before any real user sees the feature. Re-validation required after every classifier update and quarterly.
-- **Non-device CDS framing:** all three components are positioned as data understanding and workflow tools, not SaMD. All user-facing copy and marketing language reviewed by Medical Affairs and Legal before launch. "AI doctor", "medical AI", and "diagnosis" are prohibited in all product copy.
+- **Non-device CDS framing:** all four components are positioned as data understanding and workflow tools, not SaMD. All user-facing copy and marketing language reviewed by Medical Affairs and Legal before launch. "AI doctor", "medical AI", and "diagnosis" are prohibited in all product copy.
+- **Profile data prohibition (C4):** the User Health Profile must never be used to diagnose or make clinical determinations — only to improve relevance of responses to health information the user has themselves stated. A permanent LLM system prompt instruction (Medical Affairs + Legal sign-off required for any change) prohibits use of profile data for diagnosis. All condition references in AI responses must use attribution phrasing ("based on what you've mentioned..."), not clinical-determination phrasing. Validated in adversarial test suite (≥30 profile-personalized prompt cases, zero prohibited outputs).
 
 ### 2.5 Data privacy guarantees
 
@@ -278,7 +301,8 @@ flowchart LR
 - **Key vault-based right to erasure (Predictive AI):** stable per-user pseudonymization key stored in key vault; key deletion renders all pseudonymized training records permanently non-re-linkable to the user — satisfying PDPD (Vietnam) Article 11 / PDPA (Thailand) Section 19 without requiring deletion from training archives. Erasure certificate generated on key deletion.
 - **Consent revocation SLAs:** Patient Summary — all pending and delivered-but-unviewed summaries deleted within 24 hours; AI Coach conversation data — all stores deleted within 72 hours; audit log entries tombstoned (not deleted). Automated revocation pipelines with force-deletion escalation paths and defined runbooks.
 - **Granular per-category consent (Patient Summary):** patient selects which data categories the doctor may see (vitals, medication adherence, physical activity, symptom logs, lab results, coin events). Each category is independently toggleable. Consent is per-doctor-patient pair, not global. Re-consent required when consent text version changes (30-day window before treated as revocation).
-- **Geo-gate as first line of defense:** all three AI endpoints check server-side registered country code against VN/TH allow-list before any data access. IP-address-based restriction is not used (easily circumvented and irrelevant for residents). Allow-list expansion requires legal review + config update + localized copy in the same release.
+- **Profile-level isolation for Progressive Profiling (C4):** all database queries on `user_health_profile_entries` and `pending_profile_extractions` MUST include `WHERE profile_id = :active_profile_id`; application service role enforces this at query-builder level; `profile_id` is bound to the session token at conversation start and is immutable for the session duration; cross-profile reads are a P0 security violation. Profile store data encrypted at rest (AES-256); deleted within 72 hours on profiling consent revocation; coin event payloads contain zero health data (hashed `profile_id` + event type only).
+- **Geo-gate as first line of defense:** all four AI endpoints check server-side registered country code against VN/TH allow-list before any data access. IP-address-based restriction is not used (easily circumvented and irrelevant for residents). Allow-list expansion requires legal review + config update + localized copy in the same release.
 
 ### 2.6 Cost model — Consumer free tier + B2B monetization
 
@@ -310,11 +334,11 @@ Pricing philosophy: AI Continuity Loop features are free for all Elfie App users
 
 ## III. Team & Delivery Plan
 
-Deliver the three components sequentially by dependency risk, with Component 1 (AI Health Coach) first (no cross-team dependency), Component 2 (Predictive Adherence AI) second (ElfieCare dependency scoped to alert API only), and Component 3 (Agentic Patient Summary) third (ElfieCare dependency is largest — 5 new deliverables). This sequencing lets the team validate the safety layer and LLM integration before adding ML infrastructure, then adds the most complex cross-team dependency last when ElfieCare capacity is confirmed.
+Deliver the four components sequentially by dependency risk: Component 1 (AI Health Coach) first (no cross-team dependency); Component 4 (Progressive Profiling) immediately after AI Coach launches (built on the same request path); Component 2 (Predictive Adherence AI) third (ElfieCare dependency scoped to alert API only); Component 3 (Agentic Patient Summary) last (ElfieCare dependency is largest — 5 new deliverables). This sequencing lets the team validate the safety layer and LLM integration before adding NER profiling, then ML infrastructure, and finally the most complex cross-team dependency last when ElfieCare capacity is confirmed.
 
-### 9-Month Plan — Component 1 → Component 2 → Component 3 (18 × 2-week sprints)
+### 10-Month Plan — C1 → C4 → C2 → C3 (18 core + 4 C4 sprints)
 
-**Assumptions:** Core team = Tech Lead (1.0), Backend Eng x2, Frontend/Mobile Eng (Flutter) x1, ML Engineer x1 (Part-time or contractor), Medical Affairs reviewer (0.25), QA/Tester (0.5), PM/Product (0.5). ElfieCare engineering team: separate team, dependency confirmed before planning. Goal: deliver all three components to production in 9 months with full safety, consent, and regulatory compliance gates.
+**Assumptions:** Core team = Tech Lead (1.0), Backend Eng x2, Frontend/Mobile Eng (Flutter) x1, ML Engineer x1 (Part-time or contractor), Medical Affairs reviewer (0.25), QA/Tester (0.5), PM/Product (0.5). ElfieCare engineering team: separate team, dependency confirmed before planning. Goal: deliver all four components to production in ~10 months with full safety, consent, and regulatory compliance gates.
 
 ---
 
@@ -346,7 +370,31 @@ Deliver the three components sequentially by dependency risk, with Component 1 (
 
 ---
 
-**Phase 2 — Predictive Adherence AI (Sprints 7–12, Months 4–6)**
+**Phase 1.5 — Proactive RAG + Progressive Profiling / C4 (C4-S1 to C4-S4, Months 4–5)**
+
+*Prerequisite: AI Health Coach Launch Gate 1 passed. C4-S1 (NER service) can overlap with Phase 2 S7 (feature engineering) since they are independent pipelines. NER inference service is shared with Component 3 — capacity must be confirmed before both C4 and C3 NER-dependent features deploy.*
+
+- **C4-S1 — NER inference service + profile store schema**
+	- Deliver: NER inference service (GLiNER/SpaCy, English MVP, 7 entity types); English F1 ≥0.85 validation on held-out medical text; profile store schema migration (`user_health_profile_entries` append-only + `pending_profile_extractions` staging); `profile_id` isolation enforced at application service layer; AES-256 at-rest encryption; NER runs on PII-scrubbed text only.
+	- Acceptance: NER F1 ≥0.85 per entity type in English; append-only constraint enforced (no UPDATE/DELETE granted to application role); cross-profile read rejection test; NER latency ≤150ms P95 on 200-token messages.
+
+- **C4-S2 — Profile Gap Analyzer + embedded follow-up questions**
+	- Deliver: Profile Gap Analyzer (rule-based; 9 intent categories → required field mapping; Medical Affairs-reviewed intent map v1); post-generation follow-up question validation (count check, re-ask check, prohibited phrasing check, escalation flag check, acute symptom pattern check); profile-aware Tier 2 RAG reranking (formula: 0.7×cosine + 0.3×profile_relevance_score).
+	- Acceptance: Gap Analyzer unit tests for all 9 intent categories × 4 profile states; question count ≤2 at all times; post-generation validation strips prohibited questions in all test scenarios.
+
+- **C4-S3 — Context Assembler enhancement + confidence scoring + staleness**
+	- Deliver: profile summary block (≤200 tokens, hedged language per confidence tiers); context injection order enforcement (profile summary → Tier 1 → retrieved docs → conversation buffer); truncation priority (conversation buffer first, profile summary never below 100 tokens if non-empty); low-confidence staging flow (confidence < 0.60 → staging table, not profile store); confidence calibration pipeline (ECE ≤0.05); staleness rules (180-day flag for weight/meds/lifestyle; 365/730-day for general fields).
+	- Acceptance: profile summary ≤200 tokens for fully-populated profile; empty profile → no placeholder text; ECE ≤0.05 calibration report; staleness unit tests at boundary days (0, 90, 180, 181, 365, 366, 730).
+
+- **C4-S4 — Consent (dual-checkbox) + profile transparency UI + gamification + C4 Launch Gate**
+	- Deliver: combined consent modal (Checkbox A = AI Health Coach, required; Checkbox B = Progressive Profiling, optional, unchecked by default; two independent consent records); Settings → Privacy → AI Health Profile (field view, confidence indicators, primary-condition completeness progress bar, individual field deletion, JSON export, pending extractions view); profile milestone coin events (`PROFILE_FIRST_CONFIRMATION`, `PROFILE_COMPLETENESS_50` — idempotent per `profile_id`, zero health data in payload); profile deletion pipeline (72h SLA across PostgreSQL + Redis + audit tombstone); Family Care: profiling disabled for managed profiles in MVP.
+	- **Launch Gate 1.5:** Medical Affairs + Legal sign-off on profiling consent copy; NER F1 ≥0.85 confirmed in English; cross-profile contamination test passed (zero data leakage between profiles); profile deletion SLA tested in staging; coin event payload PII scan passed.
+
+---
+
+**Phase 2 — Predictive Adherence AI (Sprints 7–12, Months 5–8)**
+
+*Phase 2 start shifts approximately 5–6 weeks to follow C4 Launch Gate 1.5. C4-S1 (NER service build) can overlap with S7 (feature engineering) since they share no code dependencies.*
 
 - **S7 — Feature engineering pipeline + feature store**
 	- Deliver: 11-feature engineering pipeline with 7-day temporal gap enforcement; feature store schema (PostgreSQL JSONB); batch pipeline scaffold (daily overnight); holdout cohort deterministic hash logic; synthetic user trajectory unit tests.
@@ -407,6 +455,7 @@ Deliver the three components sequentially by dependency risk, with Component 1 (
 ### Notes & tradeoffs
 
 - Do not start Component 2 until AI Coach safety layer passes Launch Gate 1 — the LLM infrastructure and BAA are dependencies.
+- Do not start C4 NER profiling features in production until Launch Gate 1 passes — the PII scrubber, session token infrastructure, and AI Coach intent classifier are required runtime dependencies. C4-S1 (NER inference service build) can begin in parallel with Phase 1 S4–S6 since it has no runtime dependency on the live AI Coach; it cannot be deployed until Launch Gate 1 passes.
 - ElfieCare dependency is the single largest delivery risk. Confirm ElfieCare capacity for all 9 deliverables (Components 2 + 3 combined) in a single consolidated plan before P1-G0. Do not allow Components 2 and 3 to proceed independently — ElfieCare cannot absorb two separate planning tracks.
 - Keep ML model training (S8) on the critical path but isolated from application delivery. A model that does not clear the AUC floor does not block application delivery — the intervention queue simply has no scores to dispatch until the model passes.
 - If design owner for Premium Engagement Card is not confirmed at Week 0 (S9 dependency), default to standard in-app banner for MVP. Do not block S9 on Figma mockup.
@@ -415,8 +464,9 @@ Deliver the three components sequentially by dependency risk, with Component 1 (
 
 - **M0 (W0–W2):** BAA signed, infra baseline, LLM API integrated, geo-gate enforced, pgvector on staging.
 - **MVP (AI Health Coach) — W12 (M3):** AI Coach in production with full safety layer, consent, gamification, and mobile UI.
-- **v1 (Predictive Adherence AI) — W24 (M6):** Predictive AI live; ElfieCare engagement alerts active; bias baseline documented; holdout cohort running.
-- **v1.5 (Agentic Patient Summary) — W36 (M9):** Patient Summary live; dual consent system active; ElfieCare summary cards delivered; all three components forming the full AI Continuity Loop.
+- **v1.1 (Progressive Profiling / C4) — W20 (M5):** Progressive Profiling live; profile store active; combined dual-checkbox consent modal deployed; NER F1 ≥0.85 in English confirmed; profile milestone coin events live; Family Care isolation validated.
+- **v1.5 (Predictive Adherence AI) — W28 (M7):** Predictive AI live; ElfieCare engagement alerts active; bias baseline documented; holdout cohort running.
+- **v2 (Agentic Patient Summary) — W40 (M10):** Patient Summary live; dual consent system active; ElfieCare summary cards delivered; all four components forming the complete AI Continuity Loop flywheel.
 
 ### Staffing & ramp
 
@@ -528,6 +578,11 @@ Elfie operates in two regulated markets (Vietnam — PDPD / Circular 30/2023; Th
 | HIPAA BAA with LLM provider | Section II.2 (Build vs Buy); Section II.5; Section IV; Section III — S1 (Launch Gate prerequisite) |
 | Gamification integration (coins across all components) | Section II.1 — GamificationService; Section II.6 — Cost model; Section III — S5, S9 |
 | Non-device CDS regulatory framing | Section II.4; Section IV — Module A (Tier 1); all three component launch gates |
+| Proactive RAG + Progressive Profiling (C4) — NER entity extraction, profile store, profile summary injection | Section II — Design Document (C4 paragraph); Section II.1 — Hierarchical legend (ProfilingService); Section II.2 (NER + Profile Store Build decisions); Section III — Phase 1.5 (C4-S1 to C4-S4) |
+| Profile store `profile_id` isolation (4-layer) + append-only schema | Section II.1 — Profile Store legend; Section II.5 (profile-level isolation bullet); Section III — Phase 1.5 C4-S1 |
+| Profile Gap Analyzer + embedded follow-up questions (0–2 per response) | Section II.1 — Profile Gap Analyzer legend; Section III — Phase 1.5 C4-S2 |
+| Combined consent modal (dual-checkbox) + profile transparency UI + profile deletion | Section II.5; Section III — Phase 1.5 C4-S4 |
+| Profile milestone gamification (`PROFILE_FIRST_CONFIRMATION`, `PROFILE_COMPLETENESS_50`) | Section II.1 — GamificationService; Section III — Phase 1.5 C4-S4 |
 | System Architecture Diagram — logical & deployment view | Section II.1 — System Diagram (Mermaid block) and legend |
 | Design Document (condensed ≤600 words) | Section II — top of section contains the condensed Design Document |
 | Team & Delivery Plan — three components in 9 months | Section III — full 18-sprint plan with staffing and milestones |
