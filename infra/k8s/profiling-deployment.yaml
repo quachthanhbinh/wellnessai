@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profiling-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: profiling-service
+  template:
+    metadata:
+      labels:
+        app: profiling-service
+    spec:
+      containers:
+        - name: profiling-service
+          image: ghcr.io/ORG/profiling-service:latest
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: profiling-service
+spec:
+  selector:
+    app: profiling-service
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
